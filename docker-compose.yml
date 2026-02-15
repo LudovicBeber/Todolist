@@ -1,0 +1,143 @@
+name: pg-ha-cluster
+
+services:
+
+  php:
+    image: php:8.4-fpm
+    container_name: symfony_php
+    working_dir: /var/www
+    volumes:
+      - ./:/var/www
+    depends_on:
+      - pgpool
+
+  nginx:
+    image: nginx:alpine
+    container_name: symfony_nginx
+    ports:
+      - "8080:80"
+    volumes:
+      - ./:/var/www
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - php
+
+  pg-0:
+    image: bitnamilegacy/postgresql-repmgr:17.6.0
+    container_name: pg-0
+    restart: unless-stopped
+    environment:
+      - POSTGRESQL_POSTGRES_PASSWORD=adminpassword
+      - POSTGRESQL_USERNAME=appuser
+      - POSTGRESQL_PASSWORD=apppassword
+      - POSTGRESQL_DATABASE=appdb
+      - REPMGR_PASSWORD=repmgrpassword
+      - REPMGR_PRIMARY_HOST=pg-0
+      - REPMGR_PRIMARY_PORT=5432
+      - REPMGR_PARTNER_NODES=pg-0,pg-1,pg-2
+      - REPMGR_NODE_NAME=pg-0
+      - REPMGR_NODE_NETWORK_NAME=pg-0
+    volumes:
+      - pg_0_data:/bitnami/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -h 127.0.0.1 -p 5432"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks:
+      - pg-net
+
+  pg-1:
+    image: bitnamilegacy/postgresql-repmgr:17.6.0
+    container_name: pg-1
+    restart: unless-stopped
+    depends_on:
+      pg-0:
+        condition: service_healthy
+    environment:
+      - POSTGRESQL_POSTGRES_PASSWORD=adminpassword
+      - POSTGRESQL_USERNAME=appuser
+      - POSTGRESQL_PASSWORD=apppassword
+      - POSTGRESQL_DATABASE=appdb
+      - REPMGR_PASSWORD=repmgrpassword
+      - REPMGR_PRIMARY_HOST=pg-0
+      - REPMGR_PRIMARY_PORT=5432
+      - REPMGR_PARTNER_NODES=pg-0,pg-1,pg-2
+      - REPMGR_NODE_NAME=pg-1
+      - REPMGR_NODE_NETWORK_NAME=pg-1
+    volumes:
+      - pg_1_data:/bitnami/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -h 127.0.0.1 -p 5432"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks:
+      - pg-net
+
+  pg-2:
+    image: bitnamilegacy/postgresql-repmgr:17.6.0
+    container_name: pg-2
+    restart: unless-stopped
+    depends_on:
+      pg-0:
+        condition: service_healthy
+    environment:
+      - POSTGRESQL_POSTGRES_PASSWORD=adminpassword
+      - POSTGRESQL_USERNAME=appuser
+      - POSTGRESQL_PASSWORD=apppassword
+      - POSTGRESQL_DATABASE=appdb
+      - REPMGR_PASSWORD=repmgrpassword
+      - REPMGR_PRIMARY_HOST=pg-0
+      - REPMGR_PRIMARY_PORT=5432
+      - REPMGR_PARTNER_NODES=pg-0,pg-1,pg-2
+      - REPMGR_NODE_NAME=pg-2
+      - REPMGR_NODE_NETWORK_NAME=pg-2
+    volumes:
+      - pg_2_data:/bitnami/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -h 127.0.0.1 -p 5432"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks:
+      - pg-net
+
+  pgpool:
+    image: bitnamilegacy/pgpool:4.6.3
+    container_name: pgpool
+    restart: unless-stopped
+    depends_on:
+      pg-0:
+        condition: service_healthy
+      pg-1:
+        condition: service_healthy
+      pg-2:
+        condition: service_healthy
+    environment:
+      - PGPOOL_BACKEND_NODES=0:pg-0:5432,1:pg-1:5432,2:pg-2:5432
+      - PGPOOL_SR_CHECK_USER=appuser
+      - PGPOOL_SR_CHECK_PASSWORD=apppassword
+      - PGPOOL_ENABLE_LDAP=no
+      - PGPOOL_POSTGRES_USERNAME=postgres
+      - PGPOOL_POSTGRES_PASSWORD=adminpassword
+      - PGPOOL_ADMIN_USERNAME=admin
+      - PGPOOL_ADMIN_PASSWORD=adminpassword
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "/opt/bitnami/scripts/pgpool/healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks:
+      - pg-net
+
+networks:
+  pg-net:
+    driver: bridge
+
+volumes:
+  pg_0_data:
+  pg_1_data:
+  pg_2_data:
